@@ -7,3 +7,7 @@ outputs/
 models/
 adapters/
 .venv/
+data/*.jsonl
+data/*_stats.json
+data/*.rejected.jsonl
+data/raw/

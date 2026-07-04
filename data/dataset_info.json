@@ -1,0 +1,11 @@
+{
+  "agentdog_mix_sft": {
+    "file_name": "agentdog_mix_sft.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  }
+}
