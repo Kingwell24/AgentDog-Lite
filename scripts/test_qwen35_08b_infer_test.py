@@ -36,8 +36,24 @@ def test_default_prompt_uses_decision_criteria_without_output_cot():
     assert "do not output analysis" in prompt
 
 
+def test_parse_args_accepts_batch_size():
+    args = infer_test.parse_args(
+        [
+            "--source",
+            "local",
+            "--input",
+            "test case/summer_camp_ATBench300.json",
+            "--batch-size",
+            "16",
+        ]
+    )
+
+    assert args.batch_size == 16
+
+
 if __name__ == "__main__":
     test_parse_hf_files_defaults_and_commas()
     test_stem_for_output_handles_json_suffixes()
     test_default_prompt_uses_decision_criteria_without_output_cot()
+    test_parse_args_accepts_batch_size()
     print("generic inference tests passed")

@@ -20,13 +20,13 @@ python -m pip install -U torch transformers accelerate
 Run a small smoke baseline on the server:
 
 ```bash
-LIMIT=5 bash scripts/run_baseline_qwen35_08b_server.sh
+LIMIT=5 BATCH_SIZE=8 bash scripts/run_baseline_qwen35_08b_server.sh
 ```
 
 Run the full baseline on the server:
 
 ```bash
-bash scripts/run_baseline_qwen35_08b_server.sh
+BATCH_SIZE=16 bash scripts/run_baseline_qwen35_08b_server.sh
 ```
 
 Outputs:
@@ -54,8 +54,12 @@ python scripts/run_qwen35_08b_infer_test.py \
   --source local \
   --input "test case/summer_camp_ATBench300.json" \
   --input "test case/summer_camp_rjudge.json" \
-  --limit 1
+  --limit 1 \
+  --batch-size 8
 ```
+
+For throughput runs on the A800 server, try `--batch-size 16` first, then compare
+`--batch-size 32` if memory remains low.
 
 Per-sample debug details, including `raw_output`, are saved in each output
 directory's `predictions.jsonl`. Use `--print-raw` only when you intentionally

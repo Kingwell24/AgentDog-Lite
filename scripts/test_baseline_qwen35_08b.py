@@ -86,6 +86,27 @@ def test_progress_reporter_can_be_disabled():
     assert stream.getvalue() == ""
 
 
+def test_iter_batches_splits_records_without_dropping_tail():
+    records = [{"id": index} for index in range(5)]
+
+    batches = list(baseline.iter_batches(records, batch_size=2))
+
+    assert [[item["id"] for item in batch] for batch in batches] == [
+        [0, 1],
+        [2, 3],
+        [4],
+    ]
+
+
+def test_iter_batches_rejects_invalid_batch_size():
+    try:
+        list(baseline.iter_batches([{"id": 1}], batch_size=0))
+    except ValueError as exc:
+        assert "batch_size" in str(exc)
+    else:
+        raise AssertionError("batch_size=0 should fail")
+
+
 def test_local_inference_guard_blocks_non_server_without_override():
     assert baseline.should_block_inference(
         allow_local_run=False,
@@ -111,5 +132,7 @@ if __name__ == "__main__":
     test_build_prompt_keeps_literal_json_examples()
     test_progress_reporter_hides_sample_details()
     test_progress_reporter_can_be_disabled()
+    test_iter_batches_splits_records_without_dropping_tail()
+    test_iter_batches_rejects_invalid_batch_size()
     test_local_inference_guard_blocks_non_server_without_override()
     print("baseline unit tests passed")

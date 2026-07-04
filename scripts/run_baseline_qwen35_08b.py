@@ -158,6 +158,12 @@ def build_prompt(template: str, record: dict[str, Any]) -> str:
     )
 
 
+def iter_batches(records: list[dict[str, Any]], batch_size: int) -> list[list[dict[str, Any]]]:
+    if batch_size < 1:
+        raise ValueError("batch_size must be >= 1")
+    return [records[index : index + batch_size] for index in range(0, len(records), batch_size)]
+
+
 def parse_judgment(text: str) -> str | None:
     if not text:
         return None
@@ -232,6 +238,10 @@ def run_generation(args: argparse.Namespace, records: list[dict[str, Any]], temp
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
+
     model = AutoModelForCausalLM.from_pretrained(
         args.model,
         torch_dtype=torch.bfloat16 if torch.cuda.is_available() else "auto",
@@ -246,9 +256,16 @@ def run_generation(args: argparse.Namespace, records: list[dict[str, Any]], temp
         total=len(selected_records),
         enabled=getattr(args, "progress", "bar") != "none",
     )
-    for index, record in enumerate(selected_records, start=1):
-        prompt = build_prompt(template, record)
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=args.max_input_tokens)
+    completed = 0
+    for batch in iter_batches(selected_records, args.batch_size):
+        prompts = [build_prompt(template, record) for record in batch]
+        inputs = tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=args.max_input_tokens,
+        )
         inputs = {key: value.to(model.device) for key, value in inputs.items()}
 
         with torch.no_grad():
@@ -261,20 +278,25 @@ def run_generation(args: argparse.Namespace, records: list[dict[str, Any]], temp
                 pad_token_id=tokenizer.eos_token_id,
             )
 
-        generated_ids = output_ids[0][inputs["input_ids"].shape[-1] :]
-        raw_output = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
-        prediction = parse_judgment(raw_output)
-        row = {
-            "id": record.get("id", index - 1),
-            "label": record.get("label"),
-            "prediction": prediction,
-            "prediction_int": VALID_LABELS.get(prediction),
-            "raw_output": raw_output,
-            "input_tokens": int(inputs["input_ids"].shape[-1]),
-            "output_tokens": int(generated_ids.shape[-1]),
-        }
-        rows.append(row)
-        progress.update(index)
+        prompt_width = inputs["input_ids"].shape[-1]
+        for batch_index, record in enumerate(batch):
+            generated_ids = output_ids[batch_index][prompt_width:]
+            raw_output = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+            prediction = parse_judgment(raw_output)
+            input_tokens = int(inputs["attention_mask"][batch_index].sum().item())
+            row = {
+                "id": record.get("id", completed + batch_index),
+                "label": record.get("label"),
+                "prediction": prediction,
+                "prediction_int": VALID_LABELS.get(prediction),
+                "raw_output": raw_output,
+                "input_tokens": input_tokens,
+                "output_tokens": int(generated_ids.shape[-1]),
+            }
+            rows.append(row)
+
+        completed += len(batch)
+        progress.update(completed)
     progress.finish()
     return rows
 
@@ -300,6 +322,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--model", default=DEFAULT_MODEL, help="HF model id or local model path.")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, type=Path, help="Prompt template path.")
     parser.add_argument("--limit", type=int, default=0, help="Optional smoke-test sample count.")
+    parser.add_argument("--batch-size", type=int, default=1, help="Number of prompts per generate() call.")
     parser.add_argument("--max-input-tokens", type=int, default=24576)
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument(
@@ -341,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
             "input": str(args.input),
             "prompt": str(args.prompt),
             "limit": args.limit,
+            "batch_size": args.batch_size,
             "max_input_tokens": args.max_input_tokens,
             "max_new_tokens": args.max_new_tokens,
         },

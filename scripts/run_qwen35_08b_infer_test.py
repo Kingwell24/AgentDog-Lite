@@ -96,6 +96,7 @@ def run_one_file(
             "input": str(input_path),
             "prompt": str(args.prompt),
             "limit": args.limit,
+            "batch_size": args.batch_size,
             "max_input_tokens": args.max_input_tokens,
             "max_new_tokens": args.max_new_tokens,
         },
@@ -132,6 +133,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--model", default=baseline.DEFAULT_MODEL)
     parser.add_argument("--prompt", type=Path, default=DEFAULT_PROMPT)
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--batch-size", type=int, default=1, help="Number of prompts per generate() call.")
     parser.add_argument("--max-input-tokens", type=int, default=24576)
     parser.add_argument("--max-new-tokens", type=int, default=128)
     parser.add_argument(
