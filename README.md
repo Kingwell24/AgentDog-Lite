@@ -34,3 +34,29 @@ Outputs:
 - `predictions.jsonl`: `id`, gold `label`, parsed `prediction`, raw model output, input/output token counts.
 - `metrics.json`: accuracy, precision, recall, F1, invalid output rate, average output tokens, confusion matrix.
 - `run_config.json`: model, input, prompt, and generation settings.
+
+## Generic HF Test Script
+
+For the released summer camp test set, run this on the GPU server:
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+python scripts/run_qwen35_08b_infer_test.py \
+  --source hf \
+  --hf-repo AI45Research/2026_summer_camp_teseset \
+  --limit 1
+```
+
+For local files already copied into `test case/`:
+
+```bash
+python scripts/run_qwen35_08b_infer_test.py \
+  --source local \
+  --input "test case/summer_camp_ATBench300.json" \
+  --input "test case/summer_camp_rjudge.json" \
+  --limit 1
+```
+
+Per-sample debug details, including `raw_output`, are saved in each output
+directory's `predictions.jsonl`. Use `--print-raw` only when you intentionally
+want raw model output in the terminal.

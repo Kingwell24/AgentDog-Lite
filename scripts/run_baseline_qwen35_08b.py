@@ -13,12 +13,43 @@ import platform
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 
 DEFAULT_MODEL = "Qwen/Qwen3.5-0.8B"
 DEFAULT_PROMPT = Path("prompts/baseline_json.txt")
 VALID_LABELS = {"safe": 0, "unsafe": 1}
+
+
+class ProgressReporter:
+    def __init__(
+        self,
+        total: int,
+        enabled: bool = True,
+        stream: TextIO | None = None,
+        width: int = 28,
+    ) -> None:
+        self.total = max(total, 1)
+        self.enabled = enabled
+        self.stream = stream if stream is not None else sys.stderr
+        self.width = width
+        self._printed = False
+
+    def update(self, done: int) -> None:
+        if not self.enabled:
+            return
+        done = min(max(done, 0), self.total)
+        filled = int(self.width * done / self.total)
+        bar = "#" * filled + "-" * (self.width - filled)
+        percent = 100 * done / self.total
+        self.stream.write(f"\rProgress [{bar}] {done}/{self.total} ({percent:5.1f}%)")
+        self.stream.flush()
+        self._printed = True
+
+    def finish(self) -> None:
+        if self.enabled and self._printed:
+            self.stream.write("\n")
+            self.stream.flush()
 
 
 def should_block_inference(
@@ -121,9 +152,9 @@ def format_trajectory(record: dict[str, Any], max_chars: int = 24000) -> str:
 
 
 def build_prompt(template: str, record: dict[str, Any]) -> str:
-    return template.format(
-        trajectory=format_trajectory(record),
-        tools=format_tools(record),
+    return (
+        template.replace("{trajectory}", format_trajectory(record))
+        .replace("{tools}", format_tools(record))
     )
 
 
@@ -211,6 +242,10 @@ def run_generation(args: argparse.Namespace, records: list[dict[str, Any]], temp
 
     rows: list[dict[str, Any]] = []
     selected_records = records[: args.limit] if args.limit else records
+    progress = ProgressReporter(
+        total=len(selected_records),
+        enabled=getattr(args, "progress", "bar") != "none",
+    )
     for index, record in enumerate(selected_records, start=1):
         prompt = build_prompt(template, record)
         inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=args.max_input_tokens)
@@ -239,10 +274,8 @@ def run_generation(args: argparse.Namespace, records: list[dict[str, Any]], temp
             "output_tokens": int(generated_ids.shape[-1]),
         }
         rows.append(row)
-        print(
-            f"[{index}/{len(selected_records)}] id={row['id']} label={row['label']} pred={prediction}",
-            flush=True,
-        )
+        progress.update(index)
+    progress.finish()
     return rows
 
 
@@ -269,6 +302,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=0, help="Optional smoke-test sample count.")
     parser.add_argument("--max-input-tokens", type=int, default=24576)
     parser.add_argument("--max-new-tokens", type=int, default=32)
+    parser.add_argument(
+        "--progress",
+        choices=["bar", "none"],
+        default="bar",
+        help="Terminal progress display. Per-sample details are always saved to predictions.jsonl.",
+    )
     parser.add_argument(
         "--allow-local-run",
         action="store_true",
@@ -306,7 +345,8 @@ def main(argv: list[str] | None = None) -> int:
             "max_new_tokens": args.max_new_tokens,
         },
     )
-    print(json.dumps(metrics, ensure_ascii=False, indent=2))
+    print(f"Saved predictions to {args.output_dir / 'predictions.jsonl'}")
+    print(f"Saved metrics to {args.output_dir / 'metrics.json'}")
     return 0
 
 

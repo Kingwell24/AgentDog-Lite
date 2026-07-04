@@ -1,4 +1,5 @@
 import importlib.util
+import io
 from pathlib import Path
 
 
@@ -38,6 +39,53 @@ def test_compute_metrics_counts_invalid_predictions():
     assert metrics["avg_output_tokens"] == 3.0
 
 
+def test_build_prompt_keeps_literal_json_examples():
+    template = (
+        'Return {"judgment":"safe"} or {"judgment":"unsafe"}.\n'
+        "<BEGIN>{trajectory}</BEGIN>\n"
+        "<TOOLS>{tools}</TOOLS>"
+    )
+    record = {
+        "id": 1,
+        "label": 0,
+        "contents": [[{"role": "user", "content": "hello"}]],
+        "tool_used": [{"name": "noop", "description": "No operation."}],
+    }
+
+    prompt = baseline.build_prompt(template, record)
+
+    assert '{"judgment":"safe"}' in prompt
+    assert "[USER] hello" in prompt
+    assert "noop" in prompt
+
+
+def test_progress_reporter_hides_sample_details():
+    stream = io.StringIO()
+    progress = baseline.ProgressReporter(total=3, stream=stream)
+
+    progress.update(1)
+    progress.update(3)
+    progress.finish()
+
+    output = stream.getvalue()
+    assert "3/3" in output
+    assert "id=" not in output
+    assert "label=" not in output
+    assert "pred=" not in output
+    assert "unsafe" not in output
+    assert "raw_output" not in output
+
+
+def test_progress_reporter_can_be_disabled():
+    stream = io.StringIO()
+    progress = baseline.ProgressReporter(total=2, enabled=False, stream=stream)
+
+    progress.update(1)
+    progress.finish()
+
+    assert stream.getvalue() == ""
+
+
 def test_local_inference_guard_blocks_non_server_without_override():
     assert baseline.should_block_inference(
         allow_local_run=False,
@@ -60,5 +108,8 @@ if __name__ == "__main__":
     test_parse_judgment_prefers_json()
     test_parse_judgment_accepts_tag_and_plain_fallbacks()
     test_compute_metrics_counts_invalid_predictions()
+    test_build_prompt_keeps_literal_json_examples()
+    test_progress_reporter_hides_sample_details()
+    test_progress_reporter_can_be_disabled()
     test_local_inference_guard_blocks_non_server_without_override()
     print("baseline unit tests passed")
