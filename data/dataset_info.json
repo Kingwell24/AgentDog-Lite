@@ -25,5 +25,32 @@
       "query": "input",
       "response": "output"
     }
+  },
+  "agentdog_sft1k_minimal_aligned": {
+    "file_name": "agentdog_sft1k_minimal_aligned.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  },
+  "agentdog_sft1k_rich_original_prompt": {
+    "file_name": "agentdog_sft1k_rich_original_prompt.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  },
+  "agentdog_better_sft1k_benign200_rich": {
+    "file_name": "agentdog_better_sft1k_benign200_rich.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
   }
 }

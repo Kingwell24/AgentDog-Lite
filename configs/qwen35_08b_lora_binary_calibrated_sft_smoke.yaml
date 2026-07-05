@@ -1,0 +1,44 @@
+### model
+model_name_or_path: Qwen/Qwen3.5-0.8B
+adapter_name_or_path: outputs/train_runs/qwen35_08b_lora_binary_behavior_r16_sft-cst20260705-094644__acc-0.430__f1-0.507/checkpoint-25
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 16
+lora_alpha: 32
+lora_dropout: 0.05
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+
+### dataset
+dataset_dir: data
+dataset: agentdog_binary_calibrated_sft
+template: qwen3_5_nothink
+cutoff_len: 8192
+train_on_prompt: false
+overwrite_cache: true
+preprocessing_num_workers: 8
+dataloader_num_workers: 4
+
+### output
+output_dir: __OUTPUT_DIR__
+logging_steps: 1
+save_strategy: steps
+save_steps: 10
+plot_loss: true
+overwrite_output_dir: false
+report_to: none
+
+### train
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 8
+learning_rate: 1.0e-5
+max_steps: 10
+lr_scheduler_type: cosine
+warmup_ratio: 0.03
+bf16: true
+gradient_checkpointing: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null

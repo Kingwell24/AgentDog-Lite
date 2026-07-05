@@ -13,7 +13,9 @@ def load_module(name: str, filename: str):
 
 
 prepare = load_module("prepare_agentdog_data", "prepare_agentdog_data.py")
+prepare_sft1k = load_module("prepare_sft1k_selected_data", "prepare_sft1k_selected_data.py")
 evaluate = load_module("evaluate", "evaluate.py")
+evaluate_checkpoints = load_module("evaluate_checkpoints", "evaluate_checkpoints.py")
 run_inference = load_module("run_inference", "run_inference.py")
 
 
@@ -180,13 +182,139 @@ def test_prepare_records_binary_only_uses_deduplicated_binary_samples():
     assert {row["input"] for row in records} == {"T safe", "T unsafe"}
 
 
+def test_prepare_records_binary_calibrated_defaults_to_two_safe_per_unsafe():
+    binary_rows = [
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT safe\n<END TRAJECTORY>",
+            "input": "",
+            "output": "safe",
+        },
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT unsafe\n<END TRAJECTORY>",
+            "input": "",
+            "output": "unsafe",
+        },
+    ]
+
+    records, stats, rejected = prepare.prepare_records(
+        binary_rows,
+        [],
+        seed=11,
+        mode="binary_calibrated",
+    )
+
+    assert rejected == []
+    assert len(records) == 3
+    assert stats["mode"] == "binary_calibrated"
+    assert stats["target_safe_rate"] == 2 / 3
+    assert stats["target_safe_to_unsafe_ratio"] == 2.0
+    assert stats["safe_oversampled_added"] == 1
+    assert stats["final_safe"] == 2
+    assert stats["final_unsafe"] == 1
+
+
+def test_prepare_sft1k_selected_aligns_minimal_rows_to_current_prompt():
+    rows = [
+        {
+            "instruction": (
+                "teammate prompt\n"
+                "<TRAJECTORY>\n"
+                "agent trace with risky text but refusal\n"
+                "</TRAJECTORY>"
+            ),
+            "input": "",
+            "output": '{"judgment":"safe"}',
+            "metadata": {"risk_state": "mitigated", "source": "unit"},
+        },
+        {
+            "instruction": (
+                "teammate prompt\n"
+                "<TRAJECTORY>\n"
+                "agent trace commits harmful action\n"
+                "</TRAJECTORY>"
+            ),
+            "input": "",
+            "output": '{"judgment":"unsafe"}',
+            "metadata": {"risk_state": "committed", "source": "unit"},
+        },
+    ]
+
+    converted, stats, rejected = prepare_sft1k.convert_rows(rows)
+
+    assert rejected == []
+    assert [row["instruction"] for row in converted] == [
+        prepare.CLASSIFICATION_INSTRUCTION,
+        prepare.CLASSIFICATION_INSTRUCTION,
+    ]
+    assert converted[0]["input"] == "agent trace with risky text but refusal"
+    assert converted[0]["output"] == '{"judgment":"safe"}'
+    assert converted[1]["output"] == '{"judgment":"unsafe"}'
+    assert stats["final_safe"] == 1
+    assert stats["final_unsafe"] == 1
+    assert stats["risk_state_counts"] == {"mitigated": 1, "committed": 1}
+
+
+def test_prepare_sft1k_selected_preserves_rich_prompt_and_outputs():
+    original_prompt = (
+        "You are a trajectory safety judge. Decide whether the agent executed unsafe behavior.\n"
+        "Use one of these output schemas only.\n\n"
+        "<TRAJECTORY>\n"
+        "agent trace with prompt injection but refusal\n"
+        "</TRAJECTORY>"
+    )
+    rows = [
+        {
+            "instruction": original_prompt,
+            "input": "",
+            "output": (
+                '{"judgment":"safe","risk_state":"mitigated",'
+                '"risk_source":"Prompt Injection","safe_handling":"refused_or_halted"}'
+            ),
+            "metadata": {"risk_state": "mitigated", "source": "unit"},
+        },
+        {
+            "instruction": (
+                "You are a trajectory safety judge.\n\n"
+                "<TRAJECTORY>\n"
+                "agent trace executes an unauthorized transfer\n"
+                "</TRAJECTORY>"
+            ),
+            "input": "",
+            "output": (
+                '{"judgment":"unsafe","risk_state":"committed",'
+                '"risk_source":"Unauthorized Tool Use","failure_mode":"used_privilege",'
+                '"harm_type":"Financial Harm"}'
+            ),
+            "metadata": {"risk_state": "committed", "source": "unit"},
+        },
+    ]
+
+    converted, stats, rejected = prepare_sft1k.convert_rows(rows, mode="rich")
+
+    assert rejected == []
+    assert converted[0]["instruction"] == original_prompt
+    assert converted[0]["input"] == ""
+    assert json.loads(converted[0]["output"]) == {
+        "judgment": "safe",
+        "risk_state": "mitigated",
+        "risk_source": "Prompt Injection",
+        "safe_handling": "refused_or_halted",
+    }
+    assert json.loads(converted[1]["output"])["risk_state"] == "committed"
+    assert stats["mode"] == "rich"
+    assert stats["final_safe"] == 1
+    assert stats["final_unsafe"] == 1
+    assert stats["risk_state_counts"] == {"mitigated": 1, "committed": 1}
+
+
 def test_classification_instruction_is_balanced_against_unsafe_bias():
     instruction = prepare.CLASSIFICATION_INSTRUCTION
 
-    assert "Decision checklist" in instruction
+    assert "strict behavior classifier" in instruction
+    assert "agent's final behavior" in instruction
     assert "unsafe only if" in instruction.lower()
-    assert "Risky text alone is not enough" in instruction
-    assert "If the evidence is ambiguous" in instruction
+    assert "does not execute the harmful step" in instruction
+    assert "If evidence is ambiguous, classify it as safe" in instruction
 
 
 def test_run_inference_builds_training_style_sft_prompt():
@@ -199,12 +327,54 @@ def test_run_inference_builds_training_style_sft_prompt():
 
     prompt = run_inference.build_sft_prompt(record)
 
-    assert "You are judging whether an AI agent trajectory is safe or unsafe." in prompt
+    assert "You are a strict behavior classifier for an AI agent trajectory." in prompt
     assert "<BEGIN TRAJECTORY>" not in prompt
     assert "<AVAILABLE TOOLS>" not in prompt
     assert "Available tools:" in prompt
     assert "send_email" in prompt
     assert "[TASK] Test goal" in prompt
+
+
+def test_run_inference_builds_rich_original_prompt():
+    record = {
+        "profile": "You are a helpful assistant.",
+        "goal": "Test rich goal",
+        "tool_used": [{"name": "read_file", "description": "Read file"}],
+        "contents": [{"role": "user", "content": "hello"}],
+    }
+
+    prompt = run_inference.build_rich_prompt(record)
+
+    assert "You are a trajectory safety judge." in prompt
+    assert "Risk exposure alone is not unsafe" in prompt
+    assert '{"judgment":"safe","risk_state":"mitigated"' in prompt
+    assert "<TRAJECTORY>" in prompt
+    assert "</TRAJECTORY>" in prompt
+    assert "Available tools:" in prompt
+    assert "read_file" in prompt
+
+
+def test_run_inference_accepts_rich_prompt_style():
+    args = run_inference.parse_args(
+        [
+            "--input",
+            "test.json",
+            "--output",
+            "predictions.jsonl",
+            "--prompt-style",
+            "rich",
+        ]
+    )
+
+    assert args.prompt_style == "rich"
+
+
+def test_evaluate_checkpoints_self_test_does_not_require_run_inputs():
+    args = evaluate_checkpoints.parse_args(["--self-test"])
+
+    assert args.self_test
+    assert args.run_dir is None
+    assert args.input is None
 
 
 def test_run_inference_defaults_to_text_causal_lm_loader():
@@ -290,8 +460,14 @@ if __name__ == "__main__":
     test_prepare_records_balances_safe_against_total_unsafe()
     test_prepare_records_deduplicates_trajectories_before_balancing()
     test_prepare_records_binary_only_uses_deduplicated_binary_samples()
+    test_prepare_records_binary_calibrated_defaults_to_two_safe_per_unsafe()
+    test_prepare_sft1k_selected_aligns_minimal_rows_to_current_prompt()
+    test_prepare_sft1k_selected_preserves_rich_prompt_and_outputs()
     test_classification_instruction_is_balanced_against_unsafe_bias()
     test_run_inference_builds_training_style_sft_prompt()
+    test_run_inference_builds_rich_original_prompt()
+    test_run_inference_accepts_rich_prompt_style()
+    test_evaluate_checkpoints_self_test_does_not_require_run_inputs()
     test_run_inference_defaults_to_text_causal_lm_loader()
     test_run_inference_remaps_llamafactory_language_model_adapter_keys()
     test_prepare_records_reports_rejected_rows()

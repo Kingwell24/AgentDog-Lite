@@ -21,6 +21,7 @@ from run_baseline_qwen35_08b import (
     should_block_inference,
 )
 from prepare_agentdog_data import CLASSIFICATION_INSTRUCTION
+from prepare_sft1k_selected_data import RICH_CLASSIFICATION_INSTRUCTION
 
 
 DEFAULT_BASE_MODEL = "Qwen/Qwen3.5-0.8B"
@@ -34,6 +35,14 @@ def build_sft_prompt(record: dict[str, Any]) -> str:
         record,
     )
     return f"{CLASSIFICATION_INSTRUCTION}\n\n{trajectory}".strip()
+
+
+def build_rich_prompt(record: dict[str, Any]) -> str:
+    trajectory = build_prompt(
+        "{trajectory}\n\nAvailable tools:\n{tools}",
+        record,
+    )
+    return f"{RICH_CLASSIFICATION_INSTRUCTION}\n\n<TRAJECTORY>\n{trajectory}\n</TRAJECTORY>".strip()
 
 
 def remap_adapter_key_for_causal_lm(key: str) -> str:
@@ -98,6 +107,8 @@ def build_generation_prompt(
 ) -> str:
     if prompt_style == "sft":
         return apply_chat_prompt(tokenizer, build_sft_prompt(record))
+    if prompt_style == "rich":
+        return apply_chat_prompt(tokenizer, build_rich_prompt(record))
     return build_prompt(template, record)
 
 
@@ -234,9 +245,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, type=Path)
     parser.add_argument(
         "--prompt-style",
-        choices=["sft", "baseline"],
+        choices=["sft", "rich", "baseline"],
         default="sft",
-        help="Use the SFT training-style chat prompt by default; baseline keeps the old prompt file.",
+        help="Use SFT or rich training-style chat prompts; baseline keeps the old prompt file.",
     )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--batch-size", type=int, default=1)

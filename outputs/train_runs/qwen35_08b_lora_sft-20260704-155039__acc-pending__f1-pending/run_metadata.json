@@ -1,0 +1,7 @@
+{
+  "run_name": "qwen35_08b_lora_sft-20260704-155039",
+  "run_dir": "outputs/train_runs/qwen35_08b_lora_sft-20260704-155039__acc-pending__f1-pending",
+  "source_config": "configs/qwen35_08b_lora_sft.yaml",
+  "train_config": "outputs/train_runs/qwen35_08b_lora_sft-20260704-155039__acc-pending__f1-pending/train_config.yaml",
+  "created_at": "20260704-155039"
+}

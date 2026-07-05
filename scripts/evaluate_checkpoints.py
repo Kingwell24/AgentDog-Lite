@@ -123,11 +123,11 @@ def run_self_test() -> int:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-dir", required=True, type=Path)
-    parser.add_argument("--input", required=True, type=Path)
+    parser.add_argument("--run-dir", type=Path)
+    parser.add_argument("--input", type=Path)
     parser.add_argument("--base-model", default=DEFAULT_BASE_MODEL)
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--prompt-style", choices=["sft", "baseline"], default="sft")
+    parser.add_argument("--prompt-style", choices=["sft", "rich", "baseline"], default="sft")
     parser.add_argument("--max-input-tokens", type=int, default=24576)
     parser.add_argument("--max-new-tokens", type=int, default=32)
     parser.add_argument("--limit", type=int, default=0)
@@ -143,6 +143,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     if args.self_test:
         return run_self_test()
+    if args.run_dir is None or args.input is None:
+        print("--run-dir and --input are required unless --self-test is used", file=sys.stderr)
+        return 2
 
     run_dir = args.run_dir.resolve()
     checkpoints = find_checkpoints(run_dir)

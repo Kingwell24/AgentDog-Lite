@@ -21,6 +21,7 @@ DEFAULT_DATASET = "AI45Research/AgentDoG1.0-Training-Data"
 BINARY_CONFIG = "AgentDoG-BinarySafety"
 FINE_CONFIG = "AgentDoG-FineGrainedTaxonomy"
 VALID_LABELS = {"safe", "unsafe"}
+DEFAULT_BINARY_CALIBRATED_SAFE_RATE = 2 / 3
 
 CLASSIFICATION_INSTRUCTION = """You are a strict behavior classifier for an AI agent trajectory.
 
@@ -113,8 +114,10 @@ def prepare_records(
     mode: str = "mix",
     target_safe_rate: float | None = None,
 ) -> tuple[list[dict[str, str]], dict[str, Any], list[dict[str, Any]]]:
-    if mode not in {"mix", "binary"}:
+    if mode not in {"mix", "binary", "binary_calibrated"}:
         raise ValueError(f"invalid mode: {mode}")
+    if mode == "binary_calibrated" and target_safe_rate is None:
+        target_safe_rate = DEFAULT_BINARY_CALIBRATED_SAFE_RATE
     if target_safe_rate is not None and not 0.0 < target_safe_rate < 1.0:
         raise ValueError("--target-safe-rate must be between 0 and 1")
 
@@ -192,6 +195,11 @@ def prepare_records(
         "mode": mode,
         "seed": seed,
         "target_safe_rate": target_safe_rate,
+        "target_safe_to_unsafe_ratio": (
+            round(target_safe_rate / (1.0 - target_safe_rate), 6)
+            if target_safe_rate is not None
+            else 1.0
+        ),
         "binary_input_rows": len(binary_rows),
         "finegrained_input_rows": len(fine_rows),
         "binary_safe_original": binary_raw_counts["safe"],
@@ -210,6 +218,11 @@ def prepare_records(
         "safe_oversampled_added": len(balanced_safe) - len(safe_records),
         "final_safe": len(balanced_safe),
         "final_unsafe": len(unsafe_records),
+        "final_safe_to_unsafe_ratio": (
+            round(len(balanced_safe) / len(unsafe_records), 6)
+            if unsafe_records
+            else None
+        ),
         "final_safe_rate": len(balanced_safe) / len(records) if records else 0.0,
         "final_unsafe_rate": len(unsafe_records) / len(records) if records else 0.0,
         "final_total": len(records),
@@ -275,11 +288,11 @@ def run_self_test() -> int:
         binary_rows,
         [],
         seed=42,
-        mode="binary",
-        target_safe_rate=2 / 3,
+        mode="binary_calibrated",
     )
     assert calibrated_stats["final_safe"] == 2
     assert calibrated_stats["final_unsafe"] == 1
+    assert calibrated_stats["target_safe_to_unsafe_ratio"] == 2.0
     assert len(calibrated) == 3
     print("prepare_agentdog_data self-test passed")
     return 0
@@ -298,9 +311,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--mode",
-        choices=["mix", "binary"],
+        choices=["mix", "binary", "binary_calibrated"],
         default="mix",
-        help="mix uses BinarySafety plus FineGrainedTaxonomy; binary uses only deduplicated BinarySafety.",
+        help=(
+            "mix uses BinarySafety plus FineGrainedTaxonomy; binary uses only "
+            "deduplicated BinarySafety; binary_calibrated uses BinarySafety only "
+            "and defaults to safe:unsafe = 2:1."
+        ),
     )
     parser.add_argument(
         "--target-safe-rate",
@@ -326,7 +343,11 @@ def main(argv: list[str] | None = None) -> int:
         return run_self_test()
 
     binary_rows = load_hf_rows(args.dataset, BINARY_CONFIG)
-    fine_rows = [] if args.mode == "binary" else load_hf_rows(args.dataset, FINE_CONFIG)
+    fine_rows = (
+        []
+        if args.mode in {"binary", "binary_calibrated"}
+        else load_hf_rows(args.dataset, FINE_CONFIG)
+    )
     records, stats, rejected = prepare_records(
         binary_rows,
         fine_rows,

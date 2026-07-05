@@ -71,6 +71,20 @@ python scripts/prepare_agentdog_data.py \
   --seed 42
 ```
 
+For a calibrated BinarySafety-only run that biases training data toward safe
+outputs, generate a 2:1 safe/unsafe file:
+
+```bash
+python scripts/prepare_agentdog_data.py \
+  --mode binary_calibrated \
+  --output data/agentdog_binary_calibrated_sft.jsonl \
+  --stats-output data/agentdog_binary_calibrated_sft_stats.json \
+  --seed 42
+```
+
+The expected stats after deduplication are roughly `final_safe: 2000`,
+`final_unsafe: 1000`, `final_safe_to_unsafe_ratio: 2.0`.
+
 Start LoRA training:
 
 ```bash
@@ -81,6 +95,12 @@ For the BinarySafety-only run:
 
 ```bash
 bash scripts/run_llamafactory_train.sh configs/qwen35_08b_lora_binary_sft.yaml
+```
+
+For the calibrated 2:1 BinarySafety run:
+
+```bash
+bash scripts/run_llamafactory_train.sh configs/qwen35_08b_lora_binary_calibrated_sft.yaml
 ```
 
 Use QLoRA only if the LoRA run hits memory pressure:
