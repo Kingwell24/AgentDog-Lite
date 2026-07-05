@@ -1,0 +1,14 @@
+{
+  "rich_pool": "E:\\AgentDog Harness\\train case\\Training-Data-After-Harness\\sft_messages_rich_mitigated_unsafe_balanced.jsonl",
+  "benign_pool": "E:\\AgentDog Harness\\train case\\Training-Data-After-Harness\\app1_benign_100_diverse\\app1_benign_accepted.jsonl",
+  "atbench": "E:\\AgentDog Harness\\test case\\summer_camp_ATBench300.json",
+  "rjudge": "E:\\AgentDog Harness\\test case\\summer_camp_rjudge.json",
+  "out_dir": "E:\\AgentDog Harness\\train case\\SFT-1K-Selected",
+  "seed": 20260705,
+  "max_prompt_chars": 10000,
+  "targets": {
+    "unsafe": 500,
+    "mitigated": 400,
+    "benign": 100
+  }
+}

@@ -11,3 +11,6 @@ data/*.jsonl
 data/*_stats.json
 data/*.rejected.jsonl
 data/raw/
+label harness/train case/APP1-Agentic-Safety-SFT-Data/
+label harness/train case/AgentDoG1.0-Training-Data/
+label harness/train case/**/.cache/

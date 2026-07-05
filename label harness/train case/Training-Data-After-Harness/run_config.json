@@ -1,0 +1,25 @@
+{
+  "input": "E:\\AgentDog Harness\\train case\\AgentDoG1.0-Training-Data\\AgentDoG-BinarySafety\\train.json",
+  "out_dir": "E:\\AgentDog Harness\\train case\\Training-Data-After-Harness",
+  "env_file": "E:\\AgentDog Harness\\my_env.txt",
+  "model": "deepseek-v4-pro",
+  "base_url": "https://api.deepseek.com",
+  "limit": 0,
+  "workers": 16,
+  "seed": 20260704,
+  "sample_mode": "balanced",
+  "rich_target_per_class": 1000,
+  "resume": true,
+  "time_limit_seconds": 0,
+  "cached_success_cards_used": 2000,
+  "new_examples_attempted": 0,
+  "excluded_from_training": 15,
+  "dedup_stats": {
+    "raw_records": 4000,
+    "unique_records": 2000,
+    "duplicate_records": 2000,
+    "conflicting_duplicate_hashes": 0
+  },
+  "min_keep_conf": 0.7,
+  "min_flip_conf": 0.92
+}
