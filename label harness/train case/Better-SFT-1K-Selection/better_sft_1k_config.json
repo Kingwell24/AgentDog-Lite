@@ -1,0 +1,13 @@
+{
+  "selection": "E:\\AgentDog Harness\\train case\\Better-SFT-1K-Selection\\train_label_1000.json",
+  "binary_cards": "E:\\AgentDog Harness\\train case\\Training-Data-After-Harness\\trace_cards.jsonl",
+  "benign_rich": "E:\\AgentDog Harness\\train case\\SFT-1K-Selected\\sft_1k_rich_messages.jsonl",
+  "out_dir": "E:\\AgentDog Harness\\train case\\Better-SFT-1K-Selection",
+  "seed": 20260705,
+  "model": "deepseek-v4-pro",
+  "targets": {
+    "benign": 100,
+    "mitigated": 400,
+    "unsafe": 500
+  }
+}
