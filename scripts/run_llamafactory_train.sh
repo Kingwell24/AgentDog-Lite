@@ -50,4 +50,5 @@ EOF
 
 echo "Run directory: $RUN_DIR"
 echo "Training config: $TRAIN_CONFIG"
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 llamafactory-cli train "$TRAIN_CONFIG" 2>&1 | tee "$RUN_DIR/train.log"

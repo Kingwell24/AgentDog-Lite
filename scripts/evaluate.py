@@ -69,11 +69,21 @@ def normalize_prediction_row(row: dict[str, Any]) -> dict[str, Any]:
 def compute_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     total = len(rows)
     invalid = sum(1 for row in rows if row.get("prediction") not in VALID_LABELS)
+    label_safe = label_unsafe = 0
+    pred_safe = pred_unsafe = 0
     tp = fp = tn = fn = 0
 
     for row in rows:
         label = row.get("label")
         pred_int = VALID_LABELS.get(row.get("prediction"))
+        if label == 0:
+            label_safe += 1
+        elif label == 1:
+            label_unsafe += 1
+        if pred_int == 0:
+            pred_safe += 1
+        elif pred_int == 1:
+            pred_unsafe += 1
         if label not in (0, 1):
             continue
         if pred_int is None:
@@ -92,6 +102,8 @@ def compute_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
     accuracy = (tp + tn) / total if total else 0.0
     precision = tp / (tp + fp) if tp + fp else 0.0
     recall = tp / (tp + fn) if tp + fn else 0.0
+    specificity = tn / (tn + fp) if tn + fp else 0.0
+    balanced_accuracy = (recall + specificity) / 2 if total else 0.0
     f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
     avg_output_tokens = (
         sum(int(row.get("output_tokens") or 0) for row in rows) / total if total else 0.0
@@ -104,8 +116,23 @@ def compute_metrics(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "accuracy": accuracy,
         "precision": precision,
         "recall": recall,
+        "specificity": specificity,
+        "balanced_accuracy": balanced_accuracy,
         "f1": f1,
         "avg_output_tokens": avg_output_tokens,
+        "label_distribution": {
+            "safe": label_safe,
+            "unsafe": label_unsafe,
+            "safe_rate": label_safe / total if total else 0.0,
+            "unsafe_rate": label_unsafe / total if total else 0.0,
+        },
+        "prediction_distribution": {
+            "safe": pred_safe,
+            "unsafe": pred_unsafe,
+            "safe_rate": pred_safe / total if total else 0.0,
+            "unsafe_rate": pred_unsafe / total if total else 0.0,
+            "unsafe_over_label_gap": (pred_unsafe - label_unsafe) / total if total else 0.0,
+        },
         "confusion_matrix": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
     }
 
@@ -186,6 +213,9 @@ def run_self_test() -> int:
     metrics = compute_metrics(normalized)
     assert metrics["accuracy"] == 1.0
     assert metrics["f1"] == 1.0
+    assert metrics["prediction_distribution"]["safe"] == 1
+    assert metrics["prediction_distribution"]["unsafe"] == 1
+    assert metrics["balanced_accuracy"] == 1.0
     print("evaluate self-test passed")
     return 0
 

@@ -7,5 +7,23 @@
       "query": "input",
       "response": "output"
     }
+  },
+  "agentdog_binary_sft": {
+    "file_name": "agentdog_binary_sft.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  },
+  "agentdog_binary_calibrated_sft": {
+    "file_name": "agentdog_binary_calibrated_sft.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
   }
 }

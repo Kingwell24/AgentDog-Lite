@@ -14,6 +14,7 @@ def load_module(name: str, filename: str):
 
 prepare = load_module("prepare_agentdog_data", "prepare_agentdog_data.py")
 evaluate = load_module("evaluate", "evaluate.py")
+run_inference = load_module("run_inference", "run_inference.py")
 
 
 def test_prepare_records_balances_safe_against_total_unsafe():
@@ -62,6 +63,171 @@ def test_prepare_records_balances_safe_against_total_unsafe():
     assert any(
         json.loads(row["output"]).get("risk_source") == "Direct Prompt Injection"
         for row in records
+    )
+
+
+def test_prepare_records_deduplicates_trajectories_before_balancing():
+    binary_rows = [
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT safe duplicate\n<END TRAJECTORY>",
+            "input": "",
+            "output": "safe",
+        },
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT safe duplicate\n<END TRAJECTORY>",
+            "input": "",
+            "output": "safe",
+        },
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT unsafe duplicate\n<END TRAJECTORY>",
+            "input": "",
+            "output": "unsafe",
+        },
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT unsafe duplicate\n<END TRAJECTORY>",
+            "input": "",
+            "output": "unsafe",
+        },
+    ]
+    fine_rows = [
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT fine duplicate\n<END TRAJECTORY>",
+            "input": "",
+            "output": (
+                "Risk Source: Direct Prompt Injection\n"
+                "Failure Mode: Choosing Malicious Tool\n"
+                "Real World Harm: Financial & Economic Harm"
+            ),
+        },
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT fine duplicate\n<END TRAJECTORY>",
+            "input": "",
+            "output": (
+                "Risk Source: Direct Prompt Injection\n"
+                "Failure Mode: Choosing Malicious Tool\n"
+                "Real World Harm: Financial & Economic Harm"
+            ),
+        },
+    ]
+
+    records, stats, rejected = prepare.prepare_records(binary_rows, fine_rows, seed=3)
+
+    assert rejected == []
+    assert stats["binary_safe_original"] == 2
+    assert stats["binary_unsafe_original"] == 2
+    assert stats["binary_safe_after_dedup"] == 1
+    assert stats["binary_unsafe_after_dedup"] == 1
+    assert stats["binary_duplicate_rows_removed"] == 2
+    assert stats["finegrained_unsafe_original"] == 2
+    assert stats["finegrained_unsafe_after_dedup"] == 1
+    assert stats["finegrained_duplicate_rows_removed"] == 1
+    assert stats["final_safe"] == 2
+    assert stats["final_unsafe"] == 2
+    assert len(records) == 4
+
+
+def test_prepare_records_binary_only_uses_deduplicated_binary_samples():
+    binary_rows = [
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT safe\n<END TRAJECTORY>",
+            "input": "",
+            "output": "safe",
+        },
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT safe\n<END TRAJECTORY>",
+            "input": "",
+            "output": "safe",
+        },
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT unsafe\n<END TRAJECTORY>",
+            "input": "",
+            "output": "unsafe",
+        },
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT unsafe\n<END TRAJECTORY>",
+            "input": "",
+            "output": "unsafe",
+        },
+    ]
+    fine_rows = [
+        {
+            "instruction": "<BEGIN TRAJECTORY>\nT fine should be ignored\n<END TRAJECTORY>",
+            "input": "",
+            "output": (
+                "Risk Source: Direct Prompt Injection\n"
+                "Failure Mode: Choosing Malicious Tool\n"
+                "Real World Harm: Financial & Economic Harm"
+            ),
+        }
+    ]
+
+    records, stats, rejected = prepare.prepare_records(
+        binary_rows,
+        fine_rows,
+        seed=3,
+        mode="binary",
+    )
+
+    assert rejected == []
+    assert len(records) == 2
+    assert stats["mode"] == "binary"
+    assert stats["binary_safe_after_dedup"] == 1
+    assert stats["binary_unsafe_after_dedup"] == 1
+    assert stats["finegrained_unsafe_after_dedup"] == 0
+    assert stats["safe_oversampled_added"] == 0
+    assert stats["final_safe"] == 1
+    assert stats["final_unsafe"] == 1
+    assert {row["input"] for row in records} == {"T safe", "T unsafe"}
+
+
+def test_classification_instruction_is_balanced_against_unsafe_bias():
+    instruction = prepare.CLASSIFICATION_INSTRUCTION
+
+    assert "Decision checklist" in instruction
+    assert "unsafe only if" in instruction.lower()
+    assert "Risky text alone is not enough" in instruction
+    assert "If the evidence is ambiguous" in instruction
+
+
+def test_run_inference_builds_training_style_sft_prompt():
+    record = {
+        "profile": "You are a helpful assistant.",
+        "goal": "Test goal",
+        "tool_used": [{"name": "send_email", "description": "Send mail"}],
+        "contents": [{"role": "user", "content": "hello"}],
+    }
+
+    prompt = run_inference.build_sft_prompt(record)
+
+    assert "You are judging whether an AI agent trajectory is safe or unsafe." in prompt
+    assert "<BEGIN TRAJECTORY>" not in prompt
+    assert "<AVAILABLE TOOLS>" not in prompt
+    assert "Available tools:" in prompt
+    assert "send_email" in prompt
+    assert "[TASK] Test goal" in prompt
+
+
+def test_run_inference_defaults_to_text_causal_lm_loader():
+    args = run_inference.parse_args(
+        [
+            "--input",
+            "test.json",
+            "--output",
+            "predictions.jsonl",
+        ]
+    )
+
+    assert args.model_loader == "causal-lm"
+
+
+def test_run_inference_remaps_llamafactory_language_model_adapter_keys():
+    key = (
+        "base_model.model.model.language_model.layers.0.mlp.gate_proj."
+        "lora_A.weight"
+    )
+
+    assert run_inference.remap_adapter_key_for_causal_lm(key) == (
+        "base_model.model.model.layers.0.mlp.gate_proj.lora_A.weight"
     )
 
 
@@ -122,6 +288,12 @@ def test_evaluate_tags_pending_run_dir_and_mirrors_adapter_files():
 
 if __name__ == "__main__":
     test_prepare_records_balances_safe_against_total_unsafe()
+    test_prepare_records_deduplicates_trajectories_before_balancing()
+    test_prepare_records_binary_only_uses_deduplicated_binary_samples()
+    test_classification_instruction_is_balanced_against_unsafe_bias()
+    test_run_inference_builds_training_style_sft_prompt()
+    test_run_inference_defaults_to_text_causal_lm_loader()
+    test_run_inference_remaps_llamafactory_language_model_adapter_keys()
     test_prepare_records_reports_rejected_rows()
     test_evaluate_metrics_parse_raw_output_and_count_invalid()
     test_evaluate_tags_pending_run_dir_and_mirrors_adapter_files()

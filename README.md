@@ -26,7 +26,7 @@ LIMIT=5 BATCH_SIZE=8 bash scripts/run_baseline_qwen35_08b_server.sh
 Run the full baseline on the server:
 
 ```bash
-BATCH_SIZE=16 bash scripts/run_baseline_qwen35_08b_server.sh
+BATCH_SIZE=32 bash scripts/run_baseline_qwen35_08b_server.sh
 ```
 
 Outputs:
@@ -59,12 +59,28 @@ python scripts/prepare_agentdog_data.py \
   --seed 42
 ```
 
-The converter reads `AI45Research/AgentDoG1.0-Training-Data`, converts `AgentDoG-BinarySafety` to short `{"judgment":"safe|unsafe"}` targets, converts `AgentDoG-FineGrainedTaxonomy` to unsafe diagnostic JSON targets, and oversamples BinarySafety safe examples so the final safe/unsafe mix is roughly balanced.
+The converter reads `AI45Research/AgentDoG1.0-Training-Data`, converts `AgentDoG-BinarySafety` to short `{"judgment":"safe|unsafe"}` targets, converts `AgentDoG-FineGrainedTaxonomy` to unsafe diagnostic JSON targets, deduplicates both subsets by extracted trajectory text, and oversamples deduplicated BinarySafety safe examples so the final safe/unsafe mix is roughly balanced. The stats file records raw row counts, deduplicated counts, removed duplicate rows, and final class counts.
+
+For a BinarySafety-only LoRA run, prepare the deduplicated 2k binary file:
+
+```bash
+python scripts/prepare_agentdog_data.py \
+  --mode binary \
+  --output data/agentdog_binary_sft.jsonl \
+  --stats-output data/agentdog_binary_sft_stats.json \
+  --seed 42
+```
 
 Start LoRA training:
 
 ```bash
 bash scripts/run_llamafactory_train.sh configs/qwen35_08b_lora_sft.yaml
+```
+
+For the BinarySafety-only run:
+
+```bash
+bash scripts/run_llamafactory_train.sh configs/qwen35_08b_lora_binary_sft.yaml
 ```
 
 Use QLoRA only if the LoRA run hits memory pressure:
@@ -91,7 +107,8 @@ python scripts/run_inference.py \
   --adapter "$RUN_DIR" \
   --input "test case/summer_camp_ATBench300.json" \
   --output "$RUN_DIR/eval/atbench300/predictions.jsonl" \
-  --batch-size 16
+  --prompt-style sft \
+  --batch-size 32
 ```
 
 Evaluate and tag the run by score:
@@ -140,11 +157,11 @@ python scripts/run_qwen35_08b_infer_test.py \
   --input "test case/summer_camp_ATBench300.json" \
   --input "test case/summer_camp_rjudge.json" \
   --limit 1 \
-  --batch-size 8
+  --batch-size 32
 ```
 
-For throughput runs on the A800 server, try `--batch-size 16` first, then compare
-`--batch-size 32` if memory remains low.
+For throughput runs on the A800 server, use `--batch-size 32` for inference
+first. Reduce it only if inference hits memory pressure.
 
 Per-sample debug details, including `raw_output`, are saved in each output
 directory's `predictions.jsonl`. Use `--print-raw` only when you intentionally
